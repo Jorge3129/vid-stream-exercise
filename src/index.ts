@@ -1,31 +1,11 @@
-import * as http from "http";
-import { streamingService } from "./streaming/streaming-service";
+import express from "express";
+import streamingRouter from "./streaming/streaming-router";
 
-http
-  .createServer(async (req, res) => {
-    try {
-      const result = await streamingService.streamVideoFile(
-        req.url + "",
-        req.headers.range
-      );
+const app = express();
+const port = 8000;
 
-      res.writeHead(result.status, result.headers);
+app.use("/videos", streamingRouter);
 
-      result.fileStream.pipe(res);
-    } catch (e) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      });
-
-      res.end(
-        JSON.stringify({
-          status: 500,
-          message: "Internal server error",
-          description: (e as any).message,
-        })
-      );
-    }
-  })
-  .listen(8000, () => {
-    console.log(`Server listening on port ${8000}`);
-  });
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+});

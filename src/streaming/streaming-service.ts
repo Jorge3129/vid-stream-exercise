@@ -1,49 +1,70 @@
 import * as fs from "fs";
 import * as fsPromise from "fs/promises";
 import path from "path";
-import { StreamResponse } from "./stream-response.type";
+import {
+  RequestRange,
+  FullRequestRange,
+  StreamResponse,
+  StreamResponseStats,
+} from "./stream-response.type";
 
 export class StreamingService {
   public async streamVideoFile(
     fileName: string,
     range?: string
   ): Promise<StreamResponse> {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "..",
-      "public",
-      `${fileName}.mp4`
-    );
+    const filePath = path.join(__dirname, "../../public", `${fileName}.mp4`);
 
-    const { size } = await fsPromise.stat(filePath);
+    const { size: totalSize } = await fsPromise.stat(filePath);
 
-    if (range) {
-      const { start, end = size - 1 } = this.parseRange(range);
+    const parsedRange = this.parseFullRange(range, totalSize);
 
-      const headers = {
-        "Content-Type": "video/mp4",
-        "Content-Length": end - start + 1,
-        "Accept-Ranges": "bytes",
-        "Content-Range": `bytes ${start}-${end}/${size}`,
-      };
+    const fileStream = this.createStream(filePath, parsedRange);
 
-      const fileStream = fs.createReadStream(filePath, { start, end });
-
-      return { fileStream, status: 206, headers };
-    } else {
-      const headers = {
-        "Content-Type": "video/mp4",
-        "Content-Length": size,
-      };
-
-      const fileStream = fs.createReadStream(filePath);
-
-      return { fileStream, status: 200, headers };
-    }
+    return {
+      fileStream,
+      fileStats: this.getStats(totalSize, parsedRange),
+    };
   }
 
-  private parseRange(range: string): { start: number; end?: number } {
+  private createStream(filePath: string, range: FullRequestRange | null) {
+    const readOptions = range
+      ? { start: range.start, end: range.end }
+      : undefined;
+
+    return fs.createReadStream(filePath, readOptions);
+  }
+
+  private getStats(
+    totalSize: number,
+    range: FullRequestRange | null
+  ): StreamResponseStats {
+    if (!range) {
+      return { contentSize: totalSize };
+    }
+
+    const { start, end } = range;
+
+    return {
+      contentSize: end - start + 1,
+      byteRange: `bytes ${start}-${end}/${totalSize}`,
+    };
+  }
+
+  private parseFullRange(
+    range: string | undefined,
+    totalSize: number
+  ): FullRequestRange | null {
+    if (!range) {
+      return null;
+    }
+
+    const { start, end = totalSize - 1 } = this.parseRange(range);
+
+    return { start, end };
+  }
+
+  private parseRange(range: string): RequestRange {
     const [startRaw, endRaw] = range.split("=")[1].split("-");
 
     return {
