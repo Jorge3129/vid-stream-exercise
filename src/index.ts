@@ -1,46 +1,29 @@
-import * as fs from "fs";
 import * as http from "http";
-import path from "path";
-
-const parseRange = (range: string): { start: number; end?: number } => {
-  const [startRaw, endRaw] = range.split("=")[1].split("-");
-
-  return {
-    start: parseInt(startRaw, 10),
-    end: endRaw ? parseInt(endRaw, 10) : undefined,
-  };
-};
+import { streamingService } from "./streaming/streaming-service";
 
 http
-  .createServer((req, res) => {
-    const filePath = path.join(__dirname, "..", "public", "noflgs.mp4");
+  .createServer(async (req, res) => {
+    try {
+      const result = await streamingService.streamVideoFile(
+        req.url + "",
+        req.headers.range
+      );
 
-    const { size } = fs.statSync(filePath);
+      res.writeHead(result.status, result.headers);
 
-    const range = req.headers.range;
-
-    if (range) {
-      const { start, end = size - 1 } = parseRange(range);
-
-      res.writeHead(206, {
-        "Content-Type": "video/mp4",
-        "Content-Length": end - start + 1,
-        "Accept-Ranges": "bytes",
-        "Content-Range": `bytes ${start}-${end}/${size}`,
+      result.fileStream.pipe(res);
+    } catch (e) {
+      res.writeHead(500, {
+        "Content-Type": "application/json",
       });
 
-      const fileStream = fs.createReadStream(filePath, { start, end });
-
-      fileStream.pipe(res);
-    } else {
-      res.writeHead(200, {
-        "Content-Type": "video/mp4",
-        "Content-Length": size,
-      });
-
-      const fileStream = fs.createReadStream(filePath);
-
-      fileStream.pipe(res);
+      res.end(
+        JSON.stringify({
+          status: 500,
+          message: "Internal server error",
+          description: (e as any).message,
+        })
+      );
     }
   })
   .listen(8000, () => {
